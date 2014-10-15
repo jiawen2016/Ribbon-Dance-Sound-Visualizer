@@ -1,0 +1,807 @@
+//-----------------------------------------------------------------------------
+// name: RibbonDance.cpp
+// desc: Visualize sound wave using ribbons
+//
+// author: Jia Wen Li
+//   date: fall 2014
+//   uses: RtAudio by Gary Scavone
+//-----------------------------------------------------------------------------
+#include "RtAudio.h"
+#include "chuck_fft.h"
+#include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <iostream>
+#include <vector>
+using namespace std;
+
+#ifdef __MACOSX_CORE__
+#include <GLUT/glut.h>
+#include <OpenGL/gl.h>
+#include <OpenGL/glu.h>
+#else
+#include <GL/gl.h>
+#include <GL/glu.h>
+#include <GL/glut.h>
+#endif
+
+
+
+
+//-----------------------------------------------------------------------------
+// function prototypes
+//-----------------------------------------------------------------------------
+void initGfx();
+void idleFunc();
+void displayFunc();
+void reshapeFunc( GLsizei width, GLsizei height );
+void keyboardFunc( unsigned char, int, int );
+void mouseFunc( int button, int state, int x, int y );
+void help();
+// our datetype
+#define SAMPLE float
+// corresponding format for RtAudio
+#define MY_FORMAT RTAUDIO_FLOAT32
+// sample rate
+#define MY_SRATE 44100
+// number of channels
+#define MY_CHANNELS 1
+// for convenience
+#define MY_PIE 3.14159265358979
+
+// width and height
+long g_width = 1024;
+long g_height = 720;
+long g_last_width = g_width;
+long g_last_height = g_height;
+// global buffer
+SAMPLE * g_buffer = NULL;
+SAMPLE * g_fftBuf = NULL;
+SAMPLE * g_window = NULL;
+long g_bufferSize;
+long g_windowSize;
+long g_fftSize;
+SAMPLE g_srate = 44100;
+// global variables
+bool g_draw_dB = false;
+
+//waterfall
+struct Pt{float x;double y;};
+vector<Pt *> g_spectrums;
+vector<float> g_freqs;
+vector<float> c1s;
+vector<float> c2s;
+vector<float> c3s;
+int g_depth = 50;
+float g_scale=0;
+float g_positions;
+
+//GLfloat g_space = .15f;
+
+
+//-----------------------------------------------------------------------------
+// name: callme()
+// desc: audio callback
+//-----------------------------------------------------------------------------
+int callme( void * outputBuffer, void * inputBuffer, unsigned int numFrames,
+            double streamTime, RtAudioStreamStatus status, void * data )
+{
+    // cast!
+    SAMPLE * input = (SAMPLE *)inputBuffer;
+    SAMPLE * output = (SAMPLE *)outputBuffer;
+    
+    // fill
+    for( int i = 0; i < numFrames; i++ )
+    {
+        // assume mono
+        g_buffer[i] = input[i];
+        // zero output
+        output[i] = 0;
+    }
+    
+    return 0;
+}
+
+
+
+
+//-----------------------------------------------------------------------------
+// name: main()
+// desc: entry point
+//-----------------------------------------------------------------------------
+int main( int argc, char ** argv )
+{
+    // instantiate RtAudio object
+    RtAudio audio;
+    // variables
+    unsigned int bufferBytes = 0;
+    // frame size
+    unsigned int bufferFrames = 1024;
+    
+    // check for audio devices
+    if( audio.getDeviceCount() < 1 )
+    {
+        // nopes
+        cout << "no audio devices found!" << endl;
+        exit( 1 );
+    }
+    
+    // initialize GLUT
+    glutInit( &argc, argv );
+    // init gfx
+    initGfx();
+    
+    // let RtAudio print messages to stderr.
+    audio.showWarnings( true );
+    
+    // set input and output parameters
+    RtAudio::StreamParameters iParams, oParams;
+    iParams.deviceId = audio.getDefaultInputDevice();
+    iParams.nChannels = MY_CHANNELS;
+    iParams.firstChannel = 0;
+    oParams.deviceId = audio.getDefaultOutputDevice();
+    oParams.nChannels = MY_CHANNELS;
+    oParams.firstChannel = 0;
+    
+    // create stream options
+    RtAudio::StreamOptions options;
+    
+    // go for it
+    try {
+        // open a stream
+        audio.openStream( &oParams, &iParams, MY_FORMAT, MY_SRATE, &bufferFrames, &callme, (void *)&bufferBytes, &options );
+    }
+    catch( RtError& e )
+    {
+        // error!
+        cout << e.getMessage() << endl;
+        exit( 1 );
+    }
+    
+    // compute
+    bufferBytes = bufferFrames * MY_CHANNELS * sizeof(SAMPLE);
+    // allocate global buffer
+    g_bufferSize = bufferFrames;
+    g_buffer = new SAMPLE[g_bufferSize];
+    g_fftBuf = new SAMPLE[g_bufferSize];
+    memset( g_buffer, 0, sizeof(SAMPLE)*g_bufferSize );
+    memset( g_fftBuf, 0, sizeof(SAMPLE)*g_bufferSize );
+    // go for it
+    // allocate buffer to hold window
+    g_windowSize = bufferFrames;
+    g_fftSize=g_windowSize/2;
+    //g_positions = new SAMPLE[g_windowSize/2];
+    g_window = new SAMPLE[g_windowSize];
+    // generate the window
+    hanning( g_window, g_windowSize );
+    // print help
+    help();
+    try {
+        // start stream
+        audio.startStream();
+        
+        // let GLUT handle the current thread from here
+        glutMainLoop();
+        
+        // stop the stream.
+        audio.stopStream();
+    }
+    catch( RtError& e )
+    {
+        // print error message
+        cout << e.getMessage() << endl;
+        goto cleanup;
+    }
+    
+cleanup:
+    // close if open
+    if( audio.isStreamOpen() )
+        audio.closeStream();
+    
+    // done
+    return 0;
+}
+
+
+
+
+//-----------------------------------------------------------------------------
+// Name: initGfx()
+// Desc: Initialize gl
+//-----------------------------------------------------------------------------
+void initGfx()
+{
+    // double buffer, use rgb color, enable depth buffer
+    glutInitDisplayMode( GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH );
+    // initialize the window size
+    glutInitWindowSize( g_width, g_height );
+    // set the window postion
+    glutInitWindowPosition( 100, 100 );
+    // create the window
+    glutCreateWindow( "Ribbon Dance" );
+    
+    // set the idle function - called when idle
+    glutIdleFunc( idleFunc );
+    // set the display function - called when redrawing
+    glutDisplayFunc( displayFunc );
+    // set the reshape function - called when client area changes
+    glutReshapeFunc( reshapeFunc );
+    // set the keyboard function - called on keyboard events
+    glutKeyboardFunc( keyboardFunc );
+    // set the mouse function - called on mouse stuff
+    glutMouseFunc( mouseFunc );
+    
+    // set clear color
+    glClearColor( 0, 0, 0, 1 );
+    // enable color material
+    glEnable( GL_COLOR_MATERIAL );
+    // enable depth test
+    glEnable( GL_DEPTH_TEST );
+
+}
+
+
+
+
+
+//-----------------------------------------------------------------------------
+// Name: reshapeFunc( )
+// Desc: called when window size changes
+//-----------------------------------------------------------------------------
+void reshapeFunc( GLsizei w, GLsizei h )
+{
+    // save the new window size
+    g_width = w; g_height = h;
+    // map the view port to the client area
+    glViewport( 0, 0, w, h );
+    // set the matrix mode to project
+    glMatrixMode( GL_PROJECTION );
+    // load the identity matrix
+    glLoadIdentity( );
+    // create the viewing frustum
+    gluPerspective( 45.0, (GLfloat) w / (GLfloat) h, 1.0, 300.0 );
+    // set the matrix mode to modelview
+    glMatrixMode( GL_MODELVIEW );
+    // load the identity matrix
+    glLoadIdentity( );
+    // position the view point
+    gluLookAt( 0.0f, 0.0f, 10.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f );
+}
+
+
+
+
+//-----------------------------------------------------------------------------
+// Name: keyboardFunc( )
+// Desc: key event
+//-----------------------------------------------------------------------------
+void keyboardFunc( unsigned char key, int x, int y )
+{
+    switch( key )
+    {
+        case 'Q':
+        case 'q':
+            exit(1);
+            break;
+            
+        case 'd':
+            g_draw_dB = !g_draw_dB;
+            break;
+    }
+    
+    glutPostRedisplay( );
+}
+
+//-----------------------------------------------------------------------------
+// Name: help( )
+// Desc: print usage
+//-----------------------------------------------------------------------------
+void help()
+{
+    cerr << "----------------------------------------------------" << endl;
+    cerr << "RibbonDance (v1.0)" << endl;
+    cerr << "Jia Wen Li" << endl;
+    cerr << "http://website/" << endl;
+    cerr << "----------------------------------------------------" << endl;
+    cerr << "'h' - print this help message" << endl;
+    cerr << "'s' - toggle fullscreen" << endl;
+    cerr << "'q' - quit visualization" << endl;
+    cerr << "----------------------------------------------------" << endl;
+}
+
+
+//-----------------------------------------------------------------------------
+// Name: mouseFunc( )
+// Desc: handles mouse stuff
+//-----------------------------------------------------------------------------
+void mouseFunc( int button, int state, int x, int y )
+{
+    if( button == GLUT_LEFT_BUTTON )
+    {
+        // when left mouse button is down
+        if( state == GLUT_DOWN )
+        {
+        }
+        else
+        {
+        }
+    }
+    else if ( button == GLUT_RIGHT_BUTTON )
+    {
+        // when right mouse button down
+        if( state == GLUT_DOWN )
+        {
+        }
+        else
+        {
+        }
+    }
+    else
+    {
+    }
+    
+    glutPostRedisplay( );
+}
+
+
+
+
+//-----------------------------------------------------------------------------
+// Name: idleFunc( )
+// Desc: callback from GLUT
+//-----------------------------------------------------------------------------
+void idleFunc( )
+{
+    // render the scene
+    glutPostRedisplay( );
+}
+string selectColor(float freq){
+    string scale="";
+    float c1,c2,c3;
+    float C=130.81;
+    float Cs=138.59;
+    float D=73.42;
+    float Ds=77.78;
+    float E=82.41;
+    float F=87.31;
+    float Fs=92.5;
+    float G=98.0;
+    float Gs=103.83;
+    float A=110.0;
+    float As=116.54;
+    float B=123.47;
+    float epsilon=5;
+    ostringstream i_str;
+    if(freq>=73.42&&freq<=3322.44){
+    for(int i=0;i<6;i++){
+        //cout<<C*pow(2.0,i)<<" "<<freq<<endl;
+        if(fabs(freq-C*pow(2.0,i))<(C-B)*pow(2.0,i)/2){
+            c1=40.0/255.0;
+            c2=1;
+            c3=0;
+            i_str<<(i+3);
+            if(fabs(freq-C*pow(2.0,i))<epsilon)
+                scale="C"+ i_str.str();
+            break;
+        }
+        else if(fabs(freq-Cs*pow(2.0,i))<((Cs-C)*pow(2.0,i)/2)){
+            c1=0;
+            c2=1;
+            c3=(float)232/(float)255;
+            i_str<<(i+3);
+            if(fabs(freq-Cs*pow(2.0,i))<epsilon)
+                scale="C#"+i_str.str();
+            break;
+        }
+        //D
+        else if(fabs(freq-D*pow(2.0,i))<((Ds-D)*pow(2.0,i)/2)){
+            c1=0;
+            c2=124.0/255.0;
+            c3=1;
+            i_str<<(i+2);
+            if(fabs(freq-D*pow(2.0,i))<epsilon)
+                scale="D"+i_str.str();
+            break;
+        }
+        //D#
+        else if(fabs(freq-Ds*pow(2.0,i))<((E-Ds)*pow(2.0,i)/2)){
+            c1=5.0/255.0;
+            c2=0;
+            c3=1;
+            i_str<<(i+2);
+            if(fabs(freq-Ds*pow(2.0,i))<epsilon)
+                scale="D#"+i_str.str();
+            break;
+        }
+        //E
+               
+        else if(fabs(freq-E*pow(2.0,i))<((F-E)*pow(2.0,i)/2)){
+            c1=69.0/255.0;
+            c2=0;
+            c3=234.0/255.0;
+            i_str<<(i+2);
+            if(fabs(freq-E*pow(2.0,i))<epsilon)
+                scale="E"+i_str;
+            break;
+        }
+        //F
+        else if(fabs(freq-F*pow(2.0,i))<((Fs-F)*pow(2.0,i)/2)){
+            c1=87.0/255.0;
+            c2=0;
+            c3=158.0/255.0;
+            i_str<<(i+2);
+            if(fabs(freq-F*pow(2.0,i))<epsilon)
+                scale="F"+i_str.str();
+            break;
+        }
+        //F#
+        else if(fabs(freq-Fs*pow(2.0,i))<((G-Fs)*pow(2.0,i)/2)){
+            c1=116.0/255.0;
+            c2=0;
+            c3=0;
+            i_str<<(i+2);
+            if(fabs(freq-Fs*pow(2.0,i))<epsilon)
+                scale="F#"+i_str.str();
+            break;
+        }
+                
+        //G
+        else if(fabs(freq-G*pow(2.0,i))<((Gs-G)*pow(2.0,i)/2)){
+            c1=179.0/255.0;
+            c2=0;
+            c3=0;
+            i_str<<(i+2);
+            if(fabs(freq-Gs*pow(2.0,i))<epsilon)
+                scale="G"+i_str.str();
+            break;
+        }
+                
+        //G#
+        else if(fabs(freq-Gs*pow(2.0,i))<((A-Gs)*pow(2.0,i)/2)){
+            c1=238.0/255.0;
+            c2=0;
+            c3=0;
+            i_str<<(i+2);
+            if(fabs(freq-Gs*pow(2.0,i))<epsilon)
+                scale="G#"+i_str.str();
+            break;
+        }
+        //A
+        else if(fabs(freq-A*pow(2.0,i))<((As-A)*pow(2.0,i)/2)){
+            c1=1;
+            c2=99.0/255.0;
+            c3=0;
+            i_str<<(i+2);
+            if(fabs(freq-A*pow(2.0,i))<epsilon)
+                scale="A"+i_str.str();
+            break;
+        }
+        //A#
+        else if(fabs(freq-As*pow(2.0,i))<((B-As)*pow(2.0,i)/2)){
+            c1=1;
+            c2=236.0/255.0;
+            c3=0;
+            i_str<<(i+2);
+            if(fabs(freq-As*pow(2.0,i))<epsilon)
+                scale="A#"+i_str.str();
+            break;
+        }
+        //B
+        else if(fabs(freq-B*pow(2.0,i))<((C-B)*pow(2.0,i)/2)){
+            c1=153.0/255.0;
+            c2=1;
+            c3=0;
+            i_str<<(i+2);
+
+            if(fabs(freq-B*pow(2.0,i))<epsilon){
+                //cout<<B*pow(2.0,i)<<" "<<freq<<endl;
+                scale="B"+i_str.str();
+            }
+            break;
+        }
+                
+    }
+    }
+    else if(c1s.size()>0){
+        c1=c1s[c1s.size()-1];
+        c2=c2s[c2s.size()-1];
+        c3=c3s[c3s.size()-1];
+    }
+    else{
+        c1=1;
+        c2=1;
+        c3=1;
+    }
+    if(g_spectrums.size()>g_depth){
+        c1s.erase(c1s.begin());
+        c2s.erase(c2s.begin());
+        c3s.erase(c3s.begin());
+    }
+    c1s.push_back(c1);
+    c2s.push_back(c2);
+    c3s.push_back(c3);
+    return scale;
+}
+
+
+//-----------------------------------------------------------------------------
+// Name: displayFunc( )
+// Desc: callback function invoked to draw the client area
+//-----------------------------------------------------------------------------
+void displayFunc( )
+{
+    // local state
+    static GLfloat zrot = 0.0f, c = 0.0f;
+    //static char str[1024];
+    // clear the color and depth buffers
+    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+    
+    // line width
+    glLineWidth( 1.0 );
+    // define a starting point
+    GLfloat x = -5;
+    // increment
+    GLfloat xinc = ::fabs(x*2 / g_bufferSize);
+    glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        gluOrtho2D(0.0, 100, 0.0, 100);
+
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+
+        glColor3f(1,99.0/255.0,0);
+        glRasterPos2i(20, 60);
+
+        string a="A4=440Hz";
+        void * font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(1,236.0/255.0,0);
+        glRasterPos2i(20, 65);
+
+        a="A#4=466.16Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(153.0/255.0,1,0);
+        glRasterPos2i(20, 70);
+
+        a="B4=493.88Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(238.0/255.0,0,0);
+        glRasterPos2i(20, 55);
+
+        a="G#4=415.3Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(179.0/255.0,0,0);
+        glRasterPos2i(20, 50);
+
+        a="G4=392Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(116.0/255.0,0,0);
+        glRasterPos2i(20, 45);
+
+        a="F#4=369.99Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(87.0/255.0,0,158.0/255.0);
+        glRasterPos2i(5, 70);
+
+        a="F4=349.23Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(69.0/255.0,0,234.0/255.0);
+        glRasterPos2i(5, 65);
+
+        a="E4=329.63Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(5.0/255.0,0,158.1);
+        glRasterPos2i(5, 60);
+
+        a="D#4=311.13Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(124.0/255.0,0,1);
+        glRasterPos2i(5, 55);
+
+        a="D4=293.66Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(0,1,232.0/255.0);
+        glRasterPos2i(5, 50);
+
+        a="C#4=277.18Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glColor3f(40.0/255.0,1,0);
+        glRasterPos2i(5, 45);
+
+        a="C4=261.63Hz";
+        font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = a.begin(); i != a.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glMatrixMode(GL_MODELVIEW);
+        glPopMatrix();
+
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+    // color
+    glColor3f( .5, 1, .5 );
+    float j=10; 
+    float  width = 2*j*xinc;
+    float height=j;
+    float c1=0.0,c2=0.0,c3=1.0; 
+    glPushMatrix();
+        // translate
+    glTranslatef( 0, 2.5, 0 );
+    glBegin( GL_QUAD_STRIP);
+    for( int i = 0; i < g_bufferSize; i++ )
+    {
+        c1=(float)rand()/(float)RAND_MAX;
+        c2=(float)rand()/(float)RAND_MAX;
+        c3=(float)rand()/(float)RAND_MAX;
+        // plot
+        glColor3f(c1,c2,c3);
+        glVertex2f( x, height*g_buffer[i] );
+        // increment x
+        glVertex2f( x+width, height*g_buffer[i] );
+        
+        x += width;
+    }
+   glEnd();
+   // pop
+   glPopMatrix();
+   x=-5; 
+   glPushMatrix();
+   glTranslatef( 0, 2.5, 0 );
+   glBegin( GL_LINE_STRIP );
+    for( int i = 0; i < g_bufferSize; i++)
+    {
+        // plot
+         glVertex2f( x+xinc*j, height*g_buffer[i] );
+        // increment x
+        x += width;
+    }
+    glEnd();
+    glPopMatrix();
+     // copy into the fft buf
+    memcpy( g_fftBuf, g_buffer, sizeof(SAMPLE)*g_bufferSize );
+    // apply window to buf
+    apply_window( g_fftBuf, g_window, g_windowSize );
+    // take forward FFT (time domain signal -> frequency domain signal)
+    rfft( g_fftBuf, g_fftSize, FFT_FORWARD );
+    // cast the result to a buffer of complex values (re,im)
+    complex * cbuf = (complex *)g_fftBuf;
+    x = -5;
+    // compute increment
+    xinc = ::fabs(x*2 / g_fftSize);
+    float widthfft = j*xinc;
+    Pt *ptr=new Pt[g_fftSize];
+    float peakValue=-1;
+    int peakIndex=-1;
+    for(int i = 0; i < g_fftSize; i++)
+    {
+        ptr[i].x=x;
+        ptr[i].y=height*pow(height*cmp_abs(cbuf[i]), .5);
+        if(ptr[i].y>peakValue){
+            peakValue=ptr[i].y;
+            peakIndex=i;
+        }
+        x += widthfft;
+    }
+    float freq=peakIndex*g_srate / g_windowSize;
+
+    string scale=selectColor(freq);
+    if(!scale.empty()){
+        //cout<<scale<<endl;
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        gluOrtho2D(0.0, 100, 0.0, 100);
+
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+
+        glColor3f(c1s[c1s.size()-1],c2s[c2s.size()-1],c3s[c3s.size()-1]);
+        glRasterPos2i(50, 50);
+
+        ostringstream str;
+        str<<scale<<" ";
+        str<<freq<<" Hz";
+        string s=str.str();
+        void * font = GLUT_BITMAP_TIMES_ROMAN_24;
+        for (string::iterator i = s.begin(); i != s.end(); ++i)
+        {
+            char c = *i;
+            glutBitmapCharacter(font, c);
+        }
+        glMatrixMode(GL_MODELVIEW);
+        glPopMatrix();
+
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+    }
+    if(g_spectrums.size()>g_depth){
+        g_spectrums.erase(g_spectrums.begin());
+        g_freqs.erase(g_freqs.begin());
+
+    }
+    g_spectrums.push_back(ptr);
+    g_freqs.push_back(freq);
+    
+    for( int i = 0; i< g_spectrums.size(); i++ )
+    {
+        
+        Pt *pt = g_spectrums[i];
+        for( int i = 0; i < g_fftSize; i++ )
+        {   
+            
+            glPushMatrix();
+            glTranslatef( 0, -3.5, 0 );
+            glBegin( GL_QUAD_STRIP);
+            glColor3f(c1s[i],c2s[i],c3s[i]);
+            glVertex2f( pt[i].x,pt[i].y);
+            glVertex2f( pt[i].x+widthfft*0.75, pt[i].y);
+        
+        }
+        glEnd();
+        // pop
+        glPopMatrix();
+
+        
+    }
+    glFlush( );
+    glutSwapBuffers( );
+}
