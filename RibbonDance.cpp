@@ -61,7 +61,6 @@ SAMPLE * g_window = NULL;
 long g_bufferSize;
 long g_windowSize;
 long g_fftSize;
-SAMPLE g_srate = 44100;
 // global variables
 bool g_draw_dB = false;
 
@@ -116,7 +115,7 @@ int main( int argc, char ** argv )
     // variables
     unsigned int bufferBytes = 0;
     // frame size
-    unsigned int bufferFrames = 1024;
+    unsigned int bufferFrames = 2048*2;
     
     // check for audio devices
     if( audio.getDeviceCount() < 1 )
@@ -301,7 +300,7 @@ void help()
     cerr << "----------------------------------------------------" << endl;
     cerr << "RibbonDance (v1.0)" << endl;
     cerr << "Jia Wen Li" << endl;
-    cerr << "http://website/" << endl;
+    cerr << "https://ccrma.stanford.edu/~jiawen16/" << endl;
     cerr << "----------------------------------------------------" << endl;
     cerr << "'h' - print this help message" << endl;
     cerr << "'s' - toggle fullscreen" << endl;
@@ -355,7 +354,7 @@ void idleFunc( )
     // render the scene
     glutPostRedisplay( );
 }
-string selectColor(float freq){
+string selectColor(double freq){
     string scale="";
     float c1,c2,c3;
     float C=130.81;
@@ -370,132 +369,177 @@ string selectColor(float freq){
     float A=110.0;
     float As=116.54;
     float B=123.47;
-    float epsilon=5;
+    float epsilon=3;
+    int ipeak=0;
     ostringstream i_str;
+    ostringstream n_str;
     if(freq>=73.42&&freq<=3322.44){
     for(int i=0;i<6;i++){
-        //cout<<C*pow(2.0,i)<<" "<<freq<<endl;
-        if(fabs(freq-C*pow(2.0,i))<(C-B)*pow(2.0,i)/2){
+        float scales[12]={C,Cs,D,Ds,E,F,Fs,G,Gs,A,As,B};
+        for(int j=0;j<12;j++){
+            ipeak= (int)(scales[j]*pow(2.0,i)*g_windowSize/MY_SRATE);
+            if((scales[j]*pow(2.0,i)*g_windowSize/MY_SRATE-ipeak)>=0.5)
+                ipeak++;
+            scales[j]=ipeak*MY_SRATE/g_windowSize;
+
+        }
+
+        if(fabs(freq-scales[0])<(scales[1]-scales[0])/2){
             c1=40.0/255.0;
             c2=1;
             c3=0;
             i_str<<(i+3);
-            if(fabs(freq-C*pow(2.0,i))<epsilon)
-                scale="C"+ i_str.str();
+            //epsilon+=C*pow(2.0,i)-((int)(C*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[0])<=epsilon){
+                n_str<<(C*pow(2.0,i));
+                scale="C"+i_str.str()+" "+n_str.str();
+            }
             break;
         }
-        else if(fabs(freq-Cs*pow(2.0,i))<((Cs-C)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[1])<((scales[2]-scales[1])/2)){
             c1=0;
             c2=1;
             c3=(float)232/(float)255;
             i_str<<(i+3);
-            if(fabs(freq-Cs*pow(2.0,i))<epsilon)
-                scale="C#"+i_str.str();
+            //epsilon+=Cs*pow(2.0,i)-((int)(Cs*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[1])<=epsilon){
+                 n_str<<(Cs*pow(2.0,i));
+                scale="C#"+i_str.str()+" "+n_str.str();
+            }
             break;
         }
         //D
-        else if(fabs(freq-D*pow(2.0,i))<((Ds-D)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[2])<((scales[3]-scales[2])/2)){
             c1=0;
             c2=124.0/255.0;
             c3=1;
             i_str<<(i+2);
-            if(fabs(freq-D*pow(2.0,i))<epsilon)
-                scale="D"+i_str.str();
+            //epsilon+=D*pow(2.0,i)-((int)(D*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[2])<=epsilon){
+                n_str<<(D*pow(2.0,i));
+                scale="D"+i_str.str()+" "+n_str.str();
+            }
             break;
         }
         //D#
-        else if(fabs(freq-Ds*pow(2.0,i))<((E-Ds)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[3])<((scales[4]-scales[3])/2)){
             c1=5.0/255.0;
             c2=0;
             c3=1;
             i_str<<(i+2);
-            if(fabs(freq-Ds*pow(2.0,i))<epsilon)
-                scale="D#"+i_str.str();
+            //epsilon+=Ds*pow(2.0,i)-((int)(Ds*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[3])<=epsilon){
+                 n_str<<(Ds*pow(2.0,i));
+                scale="D#"+i_str.str()+" "+n_str.str();
+            }
             break;
         }
         //E
                
-        else if(fabs(freq-E*pow(2.0,i))<((F-E)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[4])<((scales[5]-scales[4])/2)){
             c1=69.0/255.0;
             c2=0;
             c3=234.0/255.0;
             i_str<<(i+2);
-            if(fabs(freq-E*pow(2.0,i))<epsilon)
-                scale="E"+i_str;
+            //epsilon+=E*pow(2.0,i)-((int)(E*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            
+            if(fabs(freq-scales[4])<=epsilon){
+                n_str<<(E*pow(2.0,i));
+                scale="E"+i_str.str()+" "+n_str.str();
+            }
             break;
         }
         //F
-        else if(fabs(freq-F*pow(2.0,i))<((Fs-F)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[5])<((scales[6]-scales[5])/2)){
             c1=87.0/255.0;
             c2=0;
             c3=158.0/255.0;
             i_str<<(i+2);
-            if(fabs(freq-F*pow(2.0,i))<epsilon)
-                scale="F"+i_str.str();
+            //cout<<E*pow(2.0,i)*g_windowSize/MY_SRATE<<" int "<<(int)(E*pow(2.0,i)*g_windowSize/MY_SRATE);
+            //epsilon+=F*pow(2.0,i)-((int)(F*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[5])<=epsilon)
+            {
+                n_str<<(F*pow(2.0,i));
+                scale="F"+i_str.str()+" "+n_str.str();
+            }
             break;
         }
         //F#
-        else if(fabs(freq-Fs*pow(2.0,i))<((G-Fs)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[6])<((scales[7]-scales[6])/2)){
             c1=116.0/255.0;
             c2=0;
             c3=0;
             i_str<<(i+2);
-            if(fabs(freq-Fs*pow(2.0,i))<epsilon)
-                scale="F#"+i_str.str();
+            //epsilon+=Fs*pow(2.0,i)-((int)(Fs*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[6])<=epsilon){
+                n_str+(Fs*pow(2.0,i));
+                scale="F#"+i_str.str()+" "+n_str.str();}
             break;
         }
                 
         //G
-        else if(fabs(freq-G*pow(2.0,i))<((Gs-G)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[7])<((scales[8]-scales[7])/2)){
             c1=179.0/255.0;
             c2=0;
             c3=0;
             i_str<<(i+2);
-            if(fabs(freq-Gs*pow(2.0,i))<epsilon)
-                scale="G"+i_str.str();
+            //epsilon+=G*pow(2.0,i)-((int)(G*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[7])<=epsilon){
+                n_str<<(G*pow(2.0,i));
+                scale="G"+i_str.str()+" "+n_str.str();}
             break;
         }
                 
         //G#
-        else if(fabs(freq-Gs*pow(2.0,i))<((A-Gs)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[8])<((scale[9]-scales[8])/2)){
             c1=238.0/255.0;
             c2=0;
             c3=0;
             i_str<<(i+2);
-            if(fabs(freq-Gs*pow(2.0,i))<epsilon)
-                scale="G#"+i_str.str();
+            //epsilon+=Gs*pow(2.0,i)-((int)(Gs*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[8])<=epsilon){
+                n_str<<(Gs*pow(2.0,i));
+                scale="G#"+i_str.str()+" "+n_str.str();}
             break;
         }
         //A
-        else if(fabs(freq-A*pow(2.0,i))<((As-A)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[9])<((scales[10]-scales[9])/2)){
             c1=1;
             c2=99.0/255.0;
             c3=0;
             i_str<<(i+2);
-            if(fabs(freq-A*pow(2.0,i))<epsilon)
-                scale="A"+i_str.str();
+            //epsilon+=A*pow(2.0,i)-((int)(A*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            
+            if(fabs(freq-scales[9])<=epsilon){
+                //cout<<epsilon<<" "<<freq<<" "<<A*pow(2.0,i)<<endl;
+                n_str<<(A*pow(2.0,i));
+                scale="A"+i_str.str()+" "+n_str.str();
+            }
             break;
         }
         //A#
-        else if(fabs(freq-As*pow(2.0,i))<((B-As)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[10])<((scales[11]-scales[10])/2)){
             c1=1;
             c2=236.0/255.0;
             c3=0;
             i_str<<(i+2);
-            if(fabs(freq-As*pow(2.0,i))<epsilon)
-                scale="A#"+i_str.str();
+            //epsilon=As*pow(2.0,i)-((int)(As*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[10])<epsilon){
+                n_str<<(As*pow(2.0,i));
+                scale="A#"+i_str.str()+" "+n_str.str();}
             break;
         }
         //B
-        else if(fabs(freq-B*pow(2.0,i))<((C-B)*pow(2.0,i)/2)){
+        else if(fabs(freq-scales[11])<((scales[11]-scales[10])/2)){
             c1=153.0/255.0;
             c2=1;
             c3=0;
             i_str<<(i+2);
-
-            if(fabs(freq-B*pow(2.0,i))<epsilon){
+            //epsilon=B*pow(2.0,i)-((int)(B*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
+            if(fabs(freq-scales[11])<epsilon){
                 //cout<<B*pow(2.0,i)<<" "<<freq<<endl;
-                scale="B"+i_str.str();
+                n_str<<(B*pow(2.0,i));
+                scale="B"+i_str.str()+" "+n_str.str();
             }
             break;
         }
@@ -512,11 +556,13 @@ string selectColor(float freq){
         c2=1;
         c3=1;
     }
+    
     if(g_spectrums.size()>g_depth){
         c1s.erase(c1s.begin());
         c2s.erase(c2s.begin());
         c3s.erase(c3s.begin());
     }
+    
     c1s.push_back(c1);
     c2s.push_back(c2);
     c3s.push_back(c3);
@@ -678,30 +724,36 @@ void displayFunc( )
         glPopMatrix();
     // color
     glColor3f( .5, 1, .5 );
-    float j=10; 
-    float  width = 2*j*xinc;
+    float j=17; 
+    float  width = 3*j*xinc;
     float height=j;
     float c1=0.0,c2=0.0,c3=1.0; 
+    c1=(float)rand()/(float)RAND_MAX;
+    c2=(float)rand()/(float)RAND_MAX;
+    c3=(float)rand()/(float)RAND_MAX;
     glPushMatrix();
         // translate
     glTranslatef( 0, 2.5, 0 );
     glBegin( GL_QUAD_STRIP);
     for( int i = 0; i < g_bufferSize; i++ )
     {
+       if(i%5==0){
         c1=(float)rand()/(float)RAND_MAX;
         c2=(float)rand()/(float)RAND_MAX;
         c3=(float)rand()/(float)RAND_MAX;
+        }
         // plot
         glColor3f(c1,c2,c3);
         glVertex2f( x, height*g_buffer[i] );
         // increment x
-        glVertex2f( x+width, height*g_buffer[i] );
+        glVertex2f( x+0.175, height*g_buffer[i]+0.05);
         
         x += width;
     }
    glEnd();
    // pop
    glPopMatrix();
+   /*
    x=-5; 
    glPushMatrix();
    glTranslatef( 0, 2.5, 0 );
@@ -709,12 +761,12 @@ void displayFunc( )
     for( int i = 0; i < g_bufferSize; i++)
     {
         // plot
-         glVertex2f( x+xinc*j, height*g_buffer[i] );
+         glVertex2f( x+0.075, height*g_buffer[i]+0.025);
         // increment x
         x += width;
     }
     glEnd();
-    glPopMatrix();
+    glPopMatrix();*/
      // copy into the fft buf
     memcpy( g_fftBuf, g_buffer, sizeof(SAMPLE)*g_bufferSize );
     // apply window to buf
@@ -726,7 +778,6 @@ void displayFunc( )
     x = -5;
     // compute increment
     xinc = ::fabs(x*2 / g_fftSize);
-    float widthfft = j*xinc;
     Pt *ptr=new Pt[g_fftSize];
     float peakValue=-1;
     int peakIndex=-1;
@@ -738,10 +789,9 @@ void displayFunc( )
             peakValue=ptr[i].y;
             peakIndex=i;
         }
-        x += widthfft;
+        x += width;
     }
-    float freq=peakIndex*g_srate / g_windowSize;
-
+    double freq=peakIndex*MY_SRATE/g_windowSize;
     string scale=selectColor(freq);
     if(!scale.empty()){
         //cout<<scale<<endl;
@@ -758,8 +808,8 @@ void displayFunc( )
         glRasterPos2i(50, 50);
 
         ostringstream str;
-        str<<scale<<" ";
-        str<<freq<<" Hz";
+        str<<scale<<" Hz";
+        //str<<freq<<" Hz";
         string s=str.str();
         void * font = GLUT_BITMAP_TIMES_ROMAN_24;
         for (string::iterator i = s.begin(); i != s.end(); ++i)
@@ -785,15 +835,15 @@ void displayFunc( )
     {
         
         Pt *pt = g_spectrums[i];
-        for( int i = 0; i < g_fftSize; i++ )
+        for( int j = 0; j< g_fftSize; j++ )
         {   
             
             glPushMatrix();
             glTranslatef( 0, -3.5, 0 );
             glBegin( GL_QUAD_STRIP);
             glColor3f(c1s[i],c2s[i],c3s[i]);
-            glVertex2f( pt[i].x,pt[i].y);
-            glVertex2f( pt[i].x+widthfft*0.75, pt[i].y);
+            glVertex2f( pt[j].x,pt[j].y);
+            glVertex2f( pt[j].x+0.15,pt[j].y+0.01);
         
         }
         glEnd();
