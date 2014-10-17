@@ -357,8 +357,8 @@ void idleFunc( )
 string selectColor(double freq){
     string scale="";
     float c1,c2,c3;
-    float C=130.81;
-    float Cs=138.59;
+    float C=65.41;
+    float Cs=69.30;
     float D=73.42;
     float Ds=77.78;
     float E=82.41;
@@ -373,7 +373,7 @@ string selectColor(double freq){
     int ipeak=0;
     ostringstream i_str;
     ostringstream n_str;
-    if(freq>=73.42&&freq<=3322.44){
+    if(freq>=65.41&&freq<=3322.44){
     for(int i=0;i<6;i++){
         float scales[12]={C,Cs,D,Ds,E,F,Fs,G,Gs,A,As,B};
         for(int j=0;j<12;j++){
@@ -384,11 +384,11 @@ string selectColor(double freq){
 
         }
 
-        if(fabs(freq-scales[0])<(scales[1]-scales[0])/2){
+        if(fabs(freq-scales[0])<((scales[1]-scales[0])/2)){
             c1=40.0/255.0;
             c2=1;
             c3=0;
-            i_str<<(i+3);
+            i_str<<(i+2);
             //epsilon+=C*pow(2.0,i)-((int)(C*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
             if(fabs(freq-scales[0])<=epsilon){
                 n_str<<(C*pow(2.0,i));
@@ -399,8 +399,8 @@ string selectColor(double freq){
         else if(fabs(freq-scales[1])<((scales[2]-scales[1])/2)){
             c1=0;
             c2=1;
-            c3=(float)232/(float)255;
-            i_str<<(i+3);
+            c3=232.0/255.0;
+            i_str<<(i+2);
             //epsilon+=Cs*pow(2.0,i)-((int)(Cs*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
             if(fabs(freq-scales[1])<=epsilon){
                  n_str<<(Cs*pow(2.0,i));
@@ -472,7 +472,7 @@ string selectColor(double freq){
             i_str<<(i+2);
             //epsilon+=Fs*pow(2.0,i)-((int)(Fs*pow(2.0,i)*g_windowSize/MY_SRATE)*MY_SRATE/g_windowSize);
             if(fabs(freq-scales[6])<=epsilon){
-                n_str+(Fs*pow(2.0,i));
+                n_str<<(Fs*pow(2.0,i));
                 scale="F#"+i_str.str()+" "+n_str.str();}
             break;
         }
